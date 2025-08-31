@@ -20,18 +20,19 @@ const peerConfig = {
 };
 
 export default function VideoMeetComponent() {
+  // Refs
   const socketRef = useRef();
   const socketIdRef = useRef();
-  const localVideoref = useRef();
+  const localVideoRefLobby = useRef();
+  const localVideoRefCall = useRef();
 
+  // State
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
   const [screenAvailable, setScreenAvailable] = useState(false);
 
   const [videos, setVideos] = useState([]);
-  const videoRef = useRef([]);
-
   const [messages, setMessages] = useState([]);
   const [newMessages, setNewMessages] = useState(0);
   const [message, setMessage] = useState("");
@@ -62,7 +63,9 @@ export default function VideoMeetComponent() {
         audio: audioEnabled
       });
       window.localStream = stream;
-      localVideoref.current.srcObject = stream;
+      if (localVideoRefCall.current) localVideoRefCall.current.srcObject = stream;
+      if (localVideoRefLobby.current) localVideoRefLobby.current.srcObject = stream;
+
       // Update tracks for peers
       for (let id in connections) {
         replaceTracks(connections[id], stream);
@@ -172,13 +175,24 @@ export default function VideoMeetComponent() {
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         const screenTrack = stream.getVideoTracks()[0];
+
         screenTrack.onended = () => stopScreenShare();
-        window.localStream.getVideoTracks()[0].enabled = false; // disable webcam track
-        replaceTracksForAllPeers(screenTrack);
-        localVideoref.current.srcObject = new MediaStream([screenTrack, ...window.localStream.getAudioTracks()]);
+
+        // Replace video track in local stream
+        const sender = window.localStream.getVideoTracks()[0];
+        window.localStream.removeTrack(sender);
+        window.localStream.addTrack(screenTrack);
+
+        // Update all peers
+        for (let id in connections) {
+          const sender = connections[id].getSenders().find(s => s.track.kind === 'video');
+          if (sender) sender.replaceTrack(screenTrack);
+        }
+
+        if (localVideoRefCall.current) localVideoRefCall.current.srcObject = window.localStream;
         setScreenSharing(true);
       } catch (e) {
-        console.log("Screen share cancelled", e);
+        console.log("Screen share cancelled or failed", e);
         setScreenSharing(false);
       }
     } else {
@@ -187,15 +201,25 @@ export default function VideoMeetComponent() {
   };
 
   const stopScreenShare = async () => {
-    await getUserMediaStream(); // restore webcam + mic
-    setScreenSharing(false);
-  };
+    const webcamStream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: audioEnabled
+    });
 
-  const replaceTracksForAllPeers = (newTrack) => {
+    const oldVideoTrack = window.localStream.getVideoTracks()[0];
+    window.localStream.removeTrack(oldVideoTrack);
+
+    const newVideoTrack = webcamStream.getVideoTracks()[0];
+    window.localStream.addTrack(newVideoTrack);
+
+    // Update all peers
     for (let id in connections) {
       const sender = connections[id].getSenders().find(s => s.track.kind === 'video');
-      if (sender) sender.replaceTrack(newTrack);
+      if (sender) sender.replaceTrack(newVideoTrack);
     }
+
+    if (localVideoRefCall.current) localVideoRefCall.current.srcObject = window.localStream;
+    setScreenSharing(false);
   };
 
   // --------------------- Video / Audio Toggle ---------------------
@@ -248,7 +272,7 @@ export default function VideoMeetComponent() {
           <TextField label="Username" value={username} onChange={e => setUsername(e.target.value)} />
           <Button variant="contained" onClick={joinLobby}>Connect</Button>
           <div>
-            <video ref={localVideoref} autoPlay muted></video>
+            <video ref={localVideoRefLobby} autoPlay muted></video>
           </div>
         </div>
       ) : (
@@ -293,7 +317,7 @@ export default function VideoMeetComponent() {
           </div>
 
           {/* Videos */}
-          <video ref={localVideoref} autoPlay muted className={styles.meetUserVideo}></video>
+          <video ref={localVideoRefCall} autoPlay muted className={styles.meetUserVideo}></video>
           <div className={styles.conferenceView}>
             {videos.map(v => (
               <video
