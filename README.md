@@ -22,3 +22,13 @@ A real-time **video conferencing application** built using the **MERN stack** wi
 **Real-time Communication:** WebRTC, Socket.IO  
 **Authentication:** JWT  
 **Development Tools:** Git/GitHub, VS Code, Postman, npm  
+
+---
+
+## 📂 Project Structure  
+
+Metify/  
+│── client/ → Frontend (React.js)  
+│── server/ → Backend (Node.js, Express.js)  
+│── config/ → Database & environment configs  
+│── README.md  
